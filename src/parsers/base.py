@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import abc
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
+from abc import ABC, abstractmethod
+
 
 @dataclass
 class LogEntry:
@@ -33,28 +34,27 @@ class LogEntry:
             level = "WARN"
         valid = {"INFO", "WARN", "ERROR", "DEBUG", "UNKNOWN"}
         self.level = level if level in valid else "UNKNOWN"
-    
 
-class Parser(abc.ABC):
+
+class Parser(ABC):
     """
     Blueprint that every log format parser must follow.
-    
+
     New formats are added by subclassing Parser and implementing
     both abstract members. The rest of the system never imports
     a specific parser directly - it works through this interface.
     """
-    
-    @abc.abstractmethod
-    def parse(self, line:str) -> Optional[LogEntry]:
+
+    @abstractmethod
+    def parse(self, line: str) -> Optional[LogEntry]:
         """
         Parse one raw log line.
-        
+
         Returns a LogEntry on success, or None if the line
         does not match this format. Never raises an exception.
         """
-        
+
     @property
-    @abc.abstractmethod
+    @abstractmethod
     def name(self) -> str:
         """Short format identifier e.g. 'apache', 'nginx'."""
-    
