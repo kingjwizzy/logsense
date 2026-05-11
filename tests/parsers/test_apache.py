@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from datetime import timezone
+
 import pytest
 from src.parsers.apache import ApacheParser
 
-# Real Apache Combined log lines used as test inputs
-# Defined at module level so every test function can use them without repetition
+# Real Apache Combined log lines covering the main status code ranges
 VALID_LINE = (
     '192.168.1.1 - frank [01/May/2026:10:23:45 +0000] '
     '"GET /api/users HTTP/1.1" 200 1234'
+)
+VALID_LINE_404 = (
+    '192.168.1.1 - - [01/May/2026:10:23:45 +0000] '
+    '"GET /missing HTTP/1.1" 404 123 "-" "curl/7.68"'
 )
 VALID_LINE_500 = (
     '192.168.1.1 - - [01/May/2026:10:23:45 +0000] '
@@ -32,9 +37,9 @@ def test_valid_line_returns_entry(parser: ApacheParser) -> None:
     result = parser.parse(VALID_LINE)
     assert result is not None
 
+
 def test_parses_timestamp(parser: ApacheParser) -> None:
-    """Timestamp is parsed correctly and is timezone aware."""
-    from datetime import timezone
+    """Timestamp is parsed correctly and stored as UTC."""
     result = parser.parse(VALID_LINE)
     assert result is not None
     assert result.timestamp.year == 2026
@@ -59,8 +64,9 @@ def test_parses_apache_fields(parser: ApacheParser) -> None:
 @pytest.mark.parametrize(
     ("line", "expected_level"),
     [
-        (VALID_LINE, "INFO"),        # 200 response should map to INFO
-        (VALID_LINE_500, "ERROR"),   # 500 response should map to ERROR
+        (VALID_LINE, "INFO"),      # 2xx → INFO
+        (VALID_LINE_404, "WARN"),  # 4xx → WARN
+        (VALID_LINE_500, "ERROR"), # 5xx → ERROR
     ],
 )
 def test_maps_status_code_to_level(
