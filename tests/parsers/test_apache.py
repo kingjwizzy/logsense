@@ -32,6 +32,17 @@ def test_valid_line_returns_entry(parser: ApacheParser) -> None:
     result = parser.parse(VALID_LINE)
     assert result is not None
 
+def test_parses_timestamp(parser: ApacheParser) -> None:
+    """Timestamp is parsed correctly and is timezone aware."""
+    from datetime import timezone
+    result = parser.parse(VALID_LINE)
+    assert result is not None
+    assert result.timestamp.year == 2026
+    assert result.timestamp.month == 5
+    assert result.timestamp.day == 1
+    assert result.timestamp.hour == 10
+    assert result.timestamp.tzinfo == timezone.utc
+
 
 def test_parses_apache_fields(parser: ApacheParser) -> None:
     """All fields are correctly extracted from a valid Apache line."""
