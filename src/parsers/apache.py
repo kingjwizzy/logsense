@@ -4,30 +4,33 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from .base import LogEntry,Parser
+from .base import LogEntry, Parser
 
-
-# Regex pattern describing the shape of an Apache Combined Log line
-# Each (?P<name>...) captures a named piece we want to extract
+# Matches a full Apache Combined Log Format line
+# Each (?P<name>...) is a named capture group we retrieve after matching
 _APACHE_RE = re.compile(
-    r'(?P<ip>\S+)'            # client IP
-    r' \S+ \S+'               # ident and auth user - always "-", ignored
-    r' \[(?P<time>[^\]]+)\]'  # [timestamp] - capture everything inside brackets
-    r' "(?P<method>\S+)'      # "METHOD
-    r' (?P<path>\S+)'         # /path
-    r' \S+"'                  # HTTP/1.1"
-    r' (?P<status>\d{3})'     # status code - exactly 3 digits
-    r' (?P<size>\S+)'         # response size - can be "-" when zero
+    r'(?P<ip>\S+)'            # client IP e.g. 192.168.1.1
+    r' \S+ \S+'               # ident + auth user, always "-", ignored
+    r' \[(?P<time>[^\]]+)\]'  # timestamp inside brackets
+    r' "(?P<method>\S+)'      # HTTP method e.g. GET
+    r' (?P<path>\S+)'         # request path e.g. /api/users
+    r' \S+"'                  # protocol e.g. HTTP/1.1
+    r' (?P<status>\d{3})'     # status code, exactly 3 digits
+    r' (?P<size>\S+)'         # response size, can be "-" when zero
 )
 
-# Format string matching Apache's timestamp e.g. 01/May/2026:10:23:45
+# Apache timestamp format: 01/May/2026:10:23:45
 _TIME_FORMAT = "%d/%b/%Y:%H:%M:%S"
 
 
 def _parse_time(time_str: str) -> Optional[datetime]:
-    """Convert Apache timestamp string to a UTC datetime. Returns None if unparseable."""
-    # Apache time looks like: 01/May/2026:10:23:45 +0000
-    # We split off the timezone offset before parsing the main part
+    """
+    Convert an Apache timestamp string to a UTC datetime.
+
+    Apache format: '01/May/2026:10:23:45 +0000'
+    We strip the timezone offset before parsing since strptime
+    doesn't handle the Apache +0000 format directly.
+    """
     parts = time_str.rsplit(" ", 1)
     if len(parts) != 2:
         return None
@@ -39,7 +42,7 @@ def _parse_time(time_str: str) -> Optional[datetime]:
 
 
 def _infer_level(status: int) -> str:
-    """Map HTTP status code to a log level."""
+    """Derive a log level from an HTTP status code."""
     if status >= 500:
         return "ERROR"
     if status >= 400:
@@ -57,13 +60,11 @@ class ApacheParser(Parser):
     def parse(self, line: str) -> Optional[LogEntry]:
         """Parse one Apache log line. Returns None if the line doesn't match."""
         line = line.rstrip("\n\r")
-        
-        # Try to match the line against our pattern
+
         match = _APACHE_RE.match(line)
         if not match:
             return None
 
-        # Parse the timestamp - if we can't, skip the line
         timestamp = _parse_time(match.group("time"))
         if timestamp is None:
             return None
@@ -71,8 +72,8 @@ class ApacheParser(Parser):
         status = int(match.group("status"))
         method = match.group("method").upper()
         path = match.group("path")
-        
-        # Size can be "-" when Apache logs zero bytes
+
+        # Apache logs "-" for response size when zero bytes were sent
         size_raw = match.group("size")
         response_size = int(size_raw) if size_raw.isdigit() else None
 
@@ -88,3 +89,5 @@ class ApacheParser(Parser):
             parser_type=self.name,
             raw=line,
         )
+    
+    
