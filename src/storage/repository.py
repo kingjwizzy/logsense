@@ -8,6 +8,10 @@ from typing import Optional
 from src.parsers.base import LogEntry
 
 
+class RepositoryError(Exception):
+    """Raised when a database operation fails unexpectedly."""
+
+
 class LogRepository:
     """
     All database operations for log entries.
@@ -33,35 +37,41 @@ class LogRepository:
 
         Returns:
             The same entry with its id field populated.
-        """
-        cursor = self._conn.execute(
-            """
-            INSERT INTO logs (
-                timestamp, level, source_ip, method, path,
-                status_code, response_size, message, parser_type, raw
-            ) VALUES (
-                :timestamp, :level, :source_ip, :method, :path,
-                :status_code, :response_size, :message, :parser_type, :raw
-            )
-            """,
-            {
-                "timestamp":     entry.timestamp.isoformat(),
-                "level":         entry.level,
-                "source_ip":     entry.source_ip,
-                "method":        entry.method,
-                "path":          entry.path,
-                "status_code":   entry.status_code,
-                "response_size": entry.response_size,
-                "message":       entry.message,
-                "parser_type":   entry.parser_type,
-                "raw":           entry.raw,
-            },
-        )
-        self._conn.commit()
 
-        # Return the entry with the database-assigned id attached
-        entry.id = cursor.lastrowid
-        return entry
+        Raises:
+            RepositoryError: If the database operation fails.
+        """
+        try:
+            cursor = self._conn.execute(
+                """
+                INSERT INTO logs (
+                    timestamp, level, source_ip, method, path,
+                    status_code, response_size, message, parser_type, raw
+                ) VALUES (
+                    :timestamp, :level, :source_ip, :method, :path,
+                    :status_code, :response_size, :message, :parser_type, :raw
+                )
+                """,
+                {
+                    "timestamp":     entry.timestamp.isoformat(),
+                    "level":         entry.level,
+                    "source_ip":     entry.source_ip,
+                    "method":        entry.method,
+                    "path":          entry.path,
+                    "status_code":   entry.status_code,
+                    "response_size": entry.response_size,
+                    "message":       entry.message,
+                    "parser_type":   entry.parser_type,
+                    "raw":           entry.raw,
+                },
+            )
+            self._conn.commit()
+
+            entry.id = cursor.lastrowid
+            return entry
+
+        except sqlite3.Error as e:
+            raise RepositoryError(f"Failed to save entry: {e}") from e
 
     def save_many(self, entries: list[LogEntry]) -> int:
         """
@@ -133,11 +143,13 @@ class LogRepository:
 
         Returns:
             List of matching LogEntry objects, newest first.
+
+        Raises:
+            RepositoryError: If the database operation fails.
         """
         query = "SELECT * FROM logs WHERE 1=1"
         params: dict = {}
 
-        # Build filters dynamically - only add clauses for provided arguments
         if level:
             query += " AND level = :level"
             params["level"] = level.upper()
@@ -162,8 +174,11 @@ class LogRepository:
         params["limit"] = limit
         params["offset"] = offset
 
-        rows = self._conn.execute(query, params).fetchall()
-        return [self._row_to_entry(row) for row in rows]
+        try:
+            rows = self._conn.execute(query, params).fetchall()
+            return [self._row_to_entry(row) for row in rows]
+        except sqlite3.Error as e:
+            raise RepositoryError(f"Failed to query entries: {e}") from e
 
     def get_by_id(self, entry_id: int) -> Optional[LogEntry]:
         """
@@ -196,7 +211,6 @@ class LogRepository:
             {"id": entry_id},
         )
         self._conn.commit()
-        # rowcount tells us how many rows were affected
         return cursor.rowcount > 0
 
     def count(

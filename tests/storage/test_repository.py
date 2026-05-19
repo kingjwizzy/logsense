@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from src.parsers.base import LogEntry
 from src.storage.database import get_connection, init_db
-from src.storage.repository import LogRepository
+from src.storage.repository import LogRepository, RepositoryError
 
 
 def make_entry(
@@ -158,3 +158,65 @@ def test_count_filters_by_level(repo: LogRepository) -> None:
     repo.save(make_entry(level="ERROR"))
     repo.save(make_entry(level="INFO"))
     assert repo.count(level="ERROR") == 2
+    
+def test_find_filters_by_since(repo: LogRepository) -> None:
+    early = make_entry(message="early entry")
+    late  = make_entry(message="late entry")
+
+    # Manually set different timestamps
+    early.timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    late.timestamp  = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+    repo.save(early)
+    repo.save(late)
+
+    cutoff = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    results = repo.find(since=cutoff)
+
+    assert len(results) == 1
+    assert results[0].message == "late entry"
+
+
+def test_find_filters_by_until(repo: LogRepository) -> None:
+    early = make_entry(message="early entry")
+    late  = make_entry(message="late entry")
+
+    early.timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    late.timestamp  = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+    repo.save(early)
+    repo.save(late)
+
+    cutoff = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    results = repo.find(until=cutoff)
+
+    assert len(results) == 1
+    assert results[0].message == "early entry"
+
+
+def test_find_filters_by_date_range(repo: LogRepository) -> None:
+    entries = [
+        make_entry(message="january"),
+        make_entry(message="april"),
+        make_entry(message="august"),
+    ]
+    entries[0].timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    entries[1].timestamp = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    entries[2].timestamp = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    repo.save_many(entries)
+
+    results = repo.find(
+        since=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        until=datetime(2026, 6, 1, tzinfo=timezone.utc),
+    )
+
+    assert len(results) == 1
+    assert results[0].message == "april"
+    
+    
+def test_save_raises_repository_error_on_failure(repo: LogRepository) -> None:
+    # Close the connection to force a database error
+    repo._conn.close()
+    with pytest.raises(RepositoryError):
+        repo.save(make_entry())
