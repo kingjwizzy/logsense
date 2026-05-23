@@ -66,10 +66,8 @@ class LogRepository:
                 },
             )
             self._conn.commit()
-
             entry.id = cursor.lastrowid
             return entry
-
         except sqlite3.Error as e:
             raise RepositoryError(f"Failed to save entry: {e}") from e
 
@@ -211,6 +209,7 @@ class LogRepository:
             {"id": entry_id},
         )
         self._conn.commit()
+        # rowcount tells us how many rows were affected
         return cursor.rowcount > 0
 
     def count(
